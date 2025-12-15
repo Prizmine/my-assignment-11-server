@@ -289,7 +289,8 @@ async function run() {
       const payment = req.body;
 
       const existingPayment = await paymentCollection.findOne({
-        transactionId: payment.transactionId,
+        contestName: payment.contestName,
+        email: payment.userEmail,
       });
 
       if (existingPayment) {
@@ -313,6 +314,15 @@ async function run() {
         { $inc: { participantsCount: 1 } }
       );
 
+      res.send(result);
+    });
+
+    app.get("/payments", verifyToken, async (req, res) => {
+      const query = {};
+      if (req.query.email) {
+        query.email = req.query.email;
+      }
+      const result = await paymentCollection.find(query).toArray();
       res.send(result);
     });
 
