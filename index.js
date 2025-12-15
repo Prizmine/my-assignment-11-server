@@ -284,6 +284,35 @@ async function run() {
     });
 
     // submition related apis
+    app.post("/submissions", verifyToken, async (req, res) => {
+      const submition = req.body;
+      submition.submitedAt = new Date();
+      const submitionExisted = await submitionCollection.findOne({
+        userEmail: submition.userEmail,
+        contestId: submition.contestId,
+      });
+
+      if (submitionExisted) {
+        return res.send({
+          message: "Submition already stored",
+        });
+      }
+
+      const result = await submitionCollection.insertOne(submition);
+      res.send(result);
+    });
+
+    app.get("/submissions", verifyToken, async (req, res) => {
+      const query = {};
+      if (req.query.email) {
+        query.userEmail = req.query.email;
+      }
+
+      const result = await submitionCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // payment related apis
 
     app.post("/payments", verifyToken, async (req, res) => {
       const payment = req.body;
