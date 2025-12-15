@@ -1,9 +1,10 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-require("dotenv").config();
+const stripe = require("stripe")(process.env.STRIP_SECRET);
 const admin = require("firebase-admin");
 
 const serviceAccount = require("./serviceKey.json");
@@ -54,6 +55,8 @@ async function run() {
     const db = client.db("contest-hub");
     const contestCollection = db.collection("contests");
     const allRolesCollection = db.collection("roles");
+    const submitionCollection = db.collection("submitions");
+    const paymentCollection = db.collection("payments");
 
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded_email;
@@ -65,6 +68,47 @@ async function run() {
       next();
     };
 
+    // stripe apis
+
+    app.post("/create-checkout-session", async (req, res) => {
+      try {
+        const paymentInfo = req.body;
+        const amount = parseInt(paymentInfo.amount);
+
+        if (!amount) {
+          return res.status(400).send({ message: "Invalid amount" });
+        }
+
+        const session = await stripe.checkout.sessions.create({
+          line_items: [
+            {
+              price_data: {
+                currency: "usd",
+                unit_amount: amount * 100,
+                product_data: {
+                  name: paymentInfo.contestName,
+                },
+              },
+              quantity: 1,
+            },
+          ],
+          customer_email: paymentInfo.userEmail,
+          mode: "payment",
+          metadata: {
+            contestId: paymentInfo.contestId,
+          },
+          success_url: `${process.env.SITE_DOMAIN}/paymentSuccess?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.SITE_DOMAIN}/paymentCanceled`,
+        });
+
+        res.send({ url: session.url });
+      } catch (error) {
+        console.error("Stripe Error:", error.message);
+        res.status(400).send({ error: error.message });
+      }
+    });
+
+    // contest related apis
 
     app.post("/contests", async (req, res) => {
       const contest = req.body;
@@ -216,7 +260,6 @@ async function run() {
       res.send(result);
     });
 
-
     app.get("/roles", async (req, res) => {
       const query = {};
       if (req.query.email) {
@@ -237,6 +280,39 @@ async function run() {
         },
       };
       const result = await allRolesCollection.updateOne(query, updatedDoc);
+      res.send(result);
+    });
+
+    // submition related apis
+
+    app.post("/payments", verifyToken, async (req, res) => {
+      const payment = req.body;
+
+      const existingPayment = await paymentCollection.findOne({
+        transactionId: payment.transactionId,
+      });
+
+      if (existingPayment) {
+        return res.send({
+          message: "Payment already stored",
+        });
+      }
+
+      const result = await paymentCollection.insertOne({
+        contestId: payment.contestId,
+        contestName: payment.contestName,
+        amount: payment.amount,
+        email: payment.userEmail,
+        transactionId: payment.transactionId,
+        paymentStatus: "paid",
+        paidAt: new Date(),
+      });
+
+      await contestCollection.updateOne(
+        { _id: new ObjectId(payment.contestId) },
+        { $inc: { participantsCount: 1 } }
+      );
+
       res.send(result);
     });
 
