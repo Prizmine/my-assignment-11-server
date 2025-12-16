@@ -57,6 +57,7 @@ async function run() {
     const allRolesCollection = db.collection("roles");
     const submitionCollection = db.collection("submitions");
     const paymentCollection = db.collection("payments");
+    const winnersCollection = db.collection("winners");
 
     const verifyAdmin = async (req, res, next) => {
       const email = req.decoded_email;
@@ -355,6 +356,32 @@ async function run() {
         query.email = req.query.email;
       }
       const result = await paymentCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // winner related apis
+
+    app.post("/winners", verifyToken, async (req, res) => {
+      const winnerdata = req.body;
+      winnerdata.wonAt = new Date();
+      const query = { contestId: winnerdata.contestId };
+      const isExists = await winnersCollection.findOne(query);
+      if (isExists) {
+        return res.send({ message: "winner already exists" });
+      }
+      const result = await winnersCollection.insertOne(winnerdata);
+      res.send(result);
+    });
+
+    app.get("/winners", verifyToken, async (req, res) => {
+      const query = {};
+      if (req.query.email) {
+        query.userEmail = req.query.email;
+      }
+      if (req.query.contestId) {
+        query.contestId = req.query.contestId;
+      }
+      const result = await submitionCollection.find(query).toArray();
       res.send(result);
     });
 
