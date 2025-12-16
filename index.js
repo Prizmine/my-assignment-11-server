@@ -131,12 +131,34 @@ async function run() {
     });
 
     app.get("/approved-contests", async (req, res) => {
-      const query = {};
-      if (req.query.status) {
-        query.status = req.query.status;
+      try {
+        const { status, category, page = 1, limit = 9 } = req.query;
+
+        const query = {};
+
+        if (status) {
+          query.status = status;
+        }
+
+        if (category) {
+          query.category = category;
+        }
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        const totalCount = await contestCollection.countDocuments(query);
+        const contests = await contestCollection
+          .find(query)
+          .skip(skip)
+          .limit(parseInt(limit))
+          .toArray();
+
+        res.send({
+          contests,
+          totalCount,
+        });
+      } catch (error) {
+        res.status(500).send({ message: "Server error", error });
       }
-      const result = await contestCollection.find(query).toArray();
-      res.send(result);
     });
 
     app.get("/contests", async (req, res) => {
@@ -381,7 +403,7 @@ async function run() {
       if (req.query.contestId) {
         query.contestId = req.query.contestId;
       }
-      const result = await submitionCollection.find(query).toArray();
+      const result = await winnersCollection.find(query).toArray();
       res.send(result);
     });
 
