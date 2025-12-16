@@ -307,6 +307,9 @@ async function run() {
       if (req.query.email) {
         query.userEmail = req.query.email;
       }
+      if (req.query.contestId) {
+        query.contestId = req.query.contestId;
+      }
 
       const result = await submitionCollection.find(query).toArray();
       res.send(result);
