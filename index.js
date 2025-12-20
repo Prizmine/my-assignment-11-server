@@ -51,7 +51,7 @@ app.get("/", (req, res) => {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const db = client.db("contest-hub");
     const contestCollection = db.collection("contests");
     const allRolesCollection = db.collection("roles");
@@ -132,32 +132,31 @@ async function run() {
 
     app.get("/approved-contests", async (req, res) => {
       try {
-        const { status, category, page = 1, limit = 9 } = req.query;
+        const { status, category, page = 1, limit = 10 } = req.query;
+
+        const pageNumber = Math.max(1, parseInt(page) || 1);
+        const pageLimit = Math.max(1, parseInt(limit) || 10);
+        const skip = (pageNumber - 1) * pageLimit;
 
         const query = {};
-
-        if (status) {
-          query.status = status;
+        if (status) query.status = status;
+        if (category && category !== "All") {
+          query.type = { $regex: category, $options: "i" };
         }
 
-        if (category) {
-          query.category = category;
-        }
-
-        const skip = (parseInt(page) - 1) * parseInt(limit);
         const totalCount = await contestCollection.countDocuments(query);
+
         const contests = await contestCollection
           .find(query)
+          .sort({ participantsCount: -1 })
           .skip(skip)
-          .limit(parseInt(limit))
+          .limit(pageLimit)
           .toArray();
 
-        res.send({
-          contests,
-          totalCount,
-        });
+        res.send({ contests, totalCount });
       } catch (error) {
-        res.status(500).send({ message: "Server error", error });
+        console.error(error);
+        res.status(500).send({ message: "Server error" });
       }
     });
 
@@ -381,6 +380,11 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/payments-length", async (req, res) => {
+      const count = await paymentCollection.countDocuments();
+      res.send({ count });
+    });
+
     // winner related apis
 
     app.post("/winners", verifyToken, async (req, res) => {
@@ -395,7 +399,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/winners", verifyToken, async (req, res) => {
+    app.get("/winners", async (req, res) => {
       const query = {};
       if (req.query.email) {
         query.userEmail = req.query.email;
@@ -403,11 +407,59 @@ async function run() {
       if (req.query.contestId) {
         query.contestId = req.query.contestId;
       }
-      const result = await winnersCollection.find(query).toArray();
+      const result = await winnersCollection
+        .find(query)
+        .sort({ wonAt: -1 })
+        .toArray();
       res.send(result);
     });
 
-    await client.db("admin").command({ ping: 1 });
+    app.get("/recent-winners", async (req, res) => {
+      const query = {};
+      if (req.query.email) {
+        query.userEmail = req.query.email;
+      }
+      if (req.query.contestId) {
+        query.contestId = req.query.contestId;
+      }
+      const result = await winnersCollection
+        .find(query)
+        .sort({ wonAt: -1 })
+        .limit(5)
+        .toArray();
+      res.send(result);
+    });
+
+    // leaderboard related apis
+
+    app.get("/leaderboard", async (req, res) => {
+      try {
+        const leaderboard = await winnersCollection
+          .aggregate([
+            {
+              $group: {
+                _id: "$userEmail",
+                name: { $first: "$name" },
+                image: { $first: "$image" },
+                totalWins: { $sum: 1 },
+              },
+            },
+            {
+              $sort: { totalWins: -1 },
+            },
+            {
+              $limit: 15,
+            },
+          ])
+          .toArray();
+
+        res.send(leaderboard);
+      } catch (error) {
+        res.status(500).send({ error: "Failed to load leaderboard" });
+      }
+    });
+
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
